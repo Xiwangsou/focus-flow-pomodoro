@@ -3,125 +3,1141 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Focus Flow — 番茄钟</title>
+<meta name="description" content="Focus Flow — 极简番茄钟，时间戳驱动的可靠计时">
+<meta name="theme-color" content="#0a0a0f">
+<title>Focus Flow</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
+/* ============================================================
+   Design tokens
+   ============================================================ */
+:root{
+  --work-p:#ff6b6b; --work-g:rgba(255,107,107,.32);
+  --break-p:#4ecdc4; --break-g:rgba(78,205,196,.32);
+  --long-p:#a29bfe; --long-g:rgba(162,155,254,.32);
+  --p:var(--work-p); --g:var(--work-g);
+
+  --bg:#0a0a0f;
+  --glass:rgba(255,255,255,.03);
+  --glass-2:rgba(255,255,255,.06);
+  --border:rgba(255,255,255,.08);
+  --border-2:rgba(255,255,255,.12);
+  --hair:rgba(255,255,255,.05);
+  --t1:#f0f0f0;
+  --t2:rgba(255,255,255,.52);
+  --t3:rgba(255,255,255,.28);
+  --tr:.55s cubic-bezier(.23,1,.32,1);
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+
+[data-theme="light"]{
+  --bg:#f4f5f7;
+  --glass:rgba(255,255,255,.62);
+  --glass-2:rgba(255,255,255,.78);
+  --border:rgba(15,23,42,.09);
+  --border-2:rgba(15,23,42,.16);
+  --hair:rgba(15,23,42,.07);
+  --t1:#0d1117;
+  --t2:rgba(15,23,42,.6);
+  --t3:rgba(15,23,42,.38);
+}
+
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
-:root{--work-p:#ff6b6b;--work-g:rgba(255,107,107,.3);--break-p:#4ecdc4;--break-g:rgba(78,205,196,.3);--long-p:#a29bfe;--long-g:rgba(162,155,254,.3);--p:var(--work-p);--g:var(--work-g);--glass:rgba(255,255,255,.03);--border:rgba(255,255,255,.08);--t1:#f0f0f0;--t2:rgba(255,255,255,.5);--t3:rgba(255,255,255,.25);--tr:.6s cubic-bezier(.23,1,.32,1)}
-html,body{height:100%;overflow:hidden}
-body{font-family:"Inter",system-ui,sans-serif;background:#0a0a0f;color:var(--t1);display:flex;align-items:center;justify-content:center}
-#bg{position:fixed;inset:0;z-index:0;pointer-events:none}
-#ml{position:fixed;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,var(--g) 0%,transparent 70%);pointer-events:none;z-index:1;transform:translate(-50%,-50%);opacity:0;filter:blur(40px);transition:opacity .3s}
-body:hover #ml{opacity:1}
-.pt{position:fixed;width:3px;height:3px;border-radius:50%;pointer-events:none;z-index:2;opacity:0;animation:fu 4s ease-in-out infinite}
-@keyframes fu{0%{transform:translateY(0) scale(0);opacity:0}10%{opacity:.6;transform:scale(1)}90%{opacity:.1}100%{transform:translateY(-100vh) scale(0);opacity:0}}
-.card{position:relative;z-index:10;width:480px;padding:48px;background:var(--glass);border:1px solid var(--border);border-radius:32px;backdrop-filter:blur(40px) saturate(1.5);-webkit-backdrop-filter:blur(40px) saturate(1.5);box-shadow:0 0 0 1px rgba(255,255,255,.03),0 32px 64px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05);transition:box-shadow var(--tr)}
-.card:hover{box-shadow:0 0 0 1px rgba(255,255,255,.06),0 32px 64px rgba(0,0,0,.5),0 0 120px var(--g),inset 0 1px 0 rgba(255,255,255,.08)}
-.hd{text-align:center;margin-bottom:40px}
-.hd h1{font-size:14px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--p);transition:color var(--tr);margin-bottom:4px}
+html,body{height:100%}
+body{
+  font-family:"Inter",system-ui,-apple-system,sans-serif;
+  background:var(--bg); color:var(--t1);
+  display:flex; align-items:center; justify-content:center;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+  transition:background var(--tr) var(--ease), color var(--tr) var(--ease);
+}
+body.zen{background:#000}
+body.zen .card,body.zen #bg,body.zen #ml,body.zen #pp{display:none}
+
+/* ============================================================
+   Ambient background — blobs cached on an offscreen canvas,
+   so the 60fps loop only blits instead of rebuilding gradients.
+   ============================================================ */
+#bg{position:fixed;inset:0;z-index:0;pointer-events:none;transition:opacity var(--tr) var(--ease)}
+#ml{
+  position:fixed;width:560px;height:560px;border-radius:50%;
+  background:radial-gradient(circle,var(--g) 0%,transparent 70%);
+  pointer-events:none;z-index:1;opacity:0;
+  filter:blur(40px);transition:opacity .3s, background var(--tr) var(--ease);
+  transform:translate(-50%,-50%);will-change:left,top;
+}
+body:hover #ml{opacity:.85}
+.pt{
+  position:fixed;width:3px;height:3px;border-radius:50%;
+  pointer-events:none;z-index:2;opacity:0;animation:fu 4s ease-in-out infinite;
+}
+@keyframes fu{
+  0%{transform:translateY(0) scale(0);opacity:0}
+  10%{opacity:.6;transform:scale(1)}
+  90%{opacity:.1}
+  100%{transform:translateY(-100vh) scale(0);opacity:0}
+}
+
+/* ============================================================
+   Card
+   ============================================================ */
+.card{
+  position:relative;z-index:10;width:480px;padding:48px;
+  background:var(--glass);border:1px solid var(--border);border-radius:32px;
+  backdrop-filter:blur(40px) saturate(1.5);
+  -webkit-backdrop-filter:blur(40px) saturate(1.5);
+  box-shadow:0 0 0 1px rgba(255,255,255,.03),0 32px 64px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05);
+  transition:box-shadow var(--tr),background var(--tr) var(--ease),border-color var(--tr) var(--ease);
+  margin:24px 16px;
+}
+.card:hover{
+  box-shadow:0 0 0 1px rgba(255,255,255,.06),0 32px 64px rgba(0,0,0,.5),0 0 120px var(--g),inset 0 1px 0 rgba(255,255,255,.08);
+}
+[data-theme="light"] .card{
+  box-shadow:0 0 0 1px rgba(15,23,42,.04),0 24px 48px rgba(15,23,42,.1),inset 0 1px 0 rgba(255,255,255,.9);
+}
+.hd{text-align:center;margin-bottom:28px}
+.hd h1{
+  font-size:14px;font-weight:600;letter-spacing:4px;text-transform:uppercase;
+  color:var(--p);transition:color var(--tr);margin-bottom:4px;
+}
 .hd p{font-size:11px;color:var(--t3);letter-spacing:1px}
-.tabs{display:flex;gap:4px;padding:4px;background:rgba(255,255,255,.03);border-radius:16px;margin-bottom:40px;border:1px solid rgba(255,255,255,.04)}
-.tab{flex:1;padding:12px 0;border:none;border-radius:12px;background:transparent;color:var(--t2);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;transition:all .3s}
-.tab:hover{color:var(--t1);background:rgba(255,255,255,.03)}
+
+/* Task label */
+.task{
+  display:block;width:100%;text-align:center;background:none;border:none;
+  font-family:inherit;font-size:13px;color:var(--t2);
+  padding:6px 8px;margin-bottom:18px;border-radius:8px;
+  transition:all .25s var(--ease);
+}
+.task::placeholder{color:var(--t3)}
+.task:hover{background:var(--glass-2)}
+.task:focus{outline:none;background:var(--glass-2);color:var(--t1)}
+
+/* Tabs */
+.tabs{
+  display:flex;gap:4px;padding:4px;background:var(--glass-2);
+  border-radius:16px;margin-bottom:36px;border:1px solid var(--hair);
+}
+.tab{
+  flex:1;padding:12px 0;border:none;border-radius:12px;background:transparent;
+  color:var(--t2);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;
+  transition:all .3s var(--ease);
+}
+.tab:hover{color:var(--t1);background:var(--glass)}
 .tab.on{color:var(--t1);background:rgba(255,255,255,.08);box-shadow:0 2px 8px rgba(0,0,0,.2)}
+[data-theme="light"] .tab.on{background:rgba(15,23,42,.06)}
 .tab .d{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle;transition:background var(--tr)}
-.tab[data-m="w"] .d{background:#ff6b6b}.tab[data-m="b"] .d{background:#4ecdc4}.tab[data-m="l"] .d{background:#a29bfe}
-.tw{position:relative;width:280px;height:280px;margin:0 auto 40px}
+.tab[data-m="w"] .d{background:var(--work-p)}
+.tab[data-m="b"] .d{background:var(--break-p)}
+.tab[data-m="l"] .d{background:var(--long-p)}
+
+/* Ring */
+.tw{position:relative;width:280px;height:280px;margin:0 auto 36px}
 .ring{width:100%;height:100%;transform:rotate(-90deg)}
-.ring .trk{fill:none;stroke:rgba(255,255,255,.04);stroke-width:3}
-.ring .prg{fill:none;stroke:var(--p);stroke-width:3;stroke-linecap:round;stroke-dasharray:829.38;stroke-dashoffset:0;transition:stroke-dashoffset 1s linear,stroke var(--tr);filter:drop-shadow(0 0 8px var(--g))}
-.ring .gw{fill:none;stroke:var(--p);stroke-width:8;stroke-linecap:round;stroke-dasharray:829.38;stroke-dashoffset:0;opacity:.15;transition:stroke-dashoffset 1s linear,stroke var(--tr);filter:blur(4px)}
+.ring .trk{fill:none;stroke:var(--hair);stroke-width:3}
+.ring .prg{
+  fill:none;stroke:var(--p);stroke-width:3;stroke-linecap:round;
+  stroke-dasharray:829.38;stroke-dashoffset:0;
+  filter:drop-shadow(0 0 8px var(--g));
+  /* No CSS transition on dashoffset — JS drives it from a timestamp, so a
+     transition would fight the update loop and lag behind real time. */
+}
+.ring .gw{
+  fill:none;stroke:var(--p);stroke-width:8;stroke-linecap:round;
+  stroke-dasharray:829.38;stroke-dashoffset:0;opacity:.15;filter:blur(4px);
+}
 .td{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.tt{font-size:64px;font-weight:200;letter-spacing:4px;font-variant-numeric:tabular-nums;line-height:1;margin-bottom:8px}
+.tt{
+  font-size:64px;font-weight:200;letter-spacing:4px;
+  font-variant-numeric:tabular-nums;line-height:1;margin-bottom:8px;
+}
 .tl{font-size:12px;color:var(--t2);letter-spacing:2px;text-transform:uppercase}
-.run .tt{animation:pt 2s ease-in-out infinite}
+.tw.run .tt{animation:pt 2s ease-in-out infinite}
 @keyframes pt{0%,100%{opacity:1}50%{opacity:.7}}
-.ctrl{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:36px}
-.btn{border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .3s cubic-bezier(.23,1,.32,1);position:relative;overflow:hidden}
-.btn::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.2),transparent 60%);opacity:0;transition:opacity .3s}
+
+/* Controls */
+.ctrl{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:32px}
+.btn{
+  border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;position:relative;overflow:hidden;
+  transition:all .3s cubic-bezier(.23,1,.32,1);
+}
+.btn::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.2),transparent 60%);
+  opacity:0;transition:opacity .3s;
+}
 .btn:hover::after{opacity:1}
 .bp{width:72px;height:72px;background:var(--p);color:#0a0a0f;box-shadow:0 4px 24px var(--g)}
 .bp:hover{transform:scale(1.08);box-shadow:0 8px 32px var(--g)}
 .bp:active{transform:scale(.95)}
 .bp svg{width:28px;height:28px;position:relative;z-index:1}
-.bs{width:48px;height:48px;background:rgba(255,255,255,.06);color:var(--t2);border:1px solid rgba(255,255,255,.08)}
+.bs{width:48px;height:48px;background:var(--glass-2);color:var(--t2);border:1px solid var(--border)}
 .bs:hover{background:rgba(255,255,255,.1);color:var(--t1);transform:scale(1.08)}
 .bs:active{transform:scale(.95)}
+.bs:disabled{opacity:.3;cursor:not-allowed;transform:none}
 .bs svg{width:18px;height:18px;position:relative;z-index:1}
-.ses{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:28px}
-.sd{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.1);transition:all .4s}
+
+/* Session dots */
+.ses{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:26px;min-height:14px}
+.sd{
+  width:10px;height:10px;border-radius:50%;
+  background:var(--glass-2);border:1.5px solid var(--border);
+  transition:all .4s var(--ease);
+}
 .sd.f{background:var(--p);border-color:var(--p);box-shadow:0 0 8px var(--g)}
 .sd.c{border-color:var(--p);animation:pd 1.5s ease-in-out infinite}
 @keyframes pd{0%,100%{box-shadow:0 0 0 0 var(--g)}50%{box-shadow:0 0 0 6px transparent}}
 .sc{font-size:12px;color:var(--t3);margin-left:8px}
-.stats{display:flex;justify-content:center;gap:32px;padding-top:24px;border-top:1px solid rgba(255,255,255,.04)}
+
+/* Stats */
+.stats{display:flex;justify-content:center;gap:32px;padding-top:22px;border-top:1px solid var(--hair)}
 .st{text-align:center}
 .sv{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
 .sl{font-size:10px;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-top:2px}
-.sound{position:absolute;top:20px;right:20px;background:none;border:none;color:var(--t3);cursor:pointer;padding:8px;border-radius:8px;transition:all .2s}
-.sound:hover{color:var(--t2);background:rgba(255,255,255,.05)}
-.sound svg{width:18px;height:18px}
-@media(max-width:560px){.card{width:calc(100vw - 32px);padding:32px 24px;border-radius:24px}.tw{width:220px;height:220px}.tt{font-size:48px}}
+
+/* Corner controls */
+.corner{position:absolute;top:18px;display:flex;gap:2px}
+.corner.left{left:18px}
+.corner.right{right:18px}
+.icon-btn{
+  background:none;border:none;color:var(--t3);cursor:pointer;
+  width:32px;height:32px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .2s var(--ease);
+}
+.icon-btn:hover{color:var(--t1);background:var(--glass-2)}
+.icon-btn svg{width:16px;height:16px}
+.icon-btn.on{color:var(--accent-p,var(--t1))}
+
+/* ============================================================
+   Panels
+   ============================================================ */
+.panel{
+  position:absolute;inset:0;padding:48px;
+  border-radius:32px;background:var(--bg);
+  display:flex;flex-direction:column;
+  opacity:0;pointer-events:none;
+  transition:opacity var(--tr) var(--ease);
+  z-index:20;
+}
+[data-theme="light"] .panel{background:#f4f5f7}
+.panel.on{opacity:1;pointer-events:auto}
+.panel-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.panel-hd h2{font-size:13px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--t2)}
+.panel-body{flex:1;overflow-y:auto;margin:0 -8px;padding:0 8px}
+
+.row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 0;border-bottom:1px solid var(--hair);
+}
+.row:last-child{border-bottom:none}
+.row-l{display:flex;flex-direction:column;gap:2px}
+.row-l label{font-size:13.5px;color:var(--t1)}
+.row-hint{font-size:11.5px;color:var(--t3)}
+.row input[type=number]{
+  width:66px;height:32px;text-align:center;
+  background:var(--glass-2);border:1px solid var(--border);
+  border-radius:8px;color:var(--t1);font-family:inherit;font-size:13px;
+  font-variant-numeric:tabular-nums;
+  transition:border-color .2s var(--ease);
+}
+.row input[type=number]:focus{outline:none;border-color:var(--p)}
+.row input[type=number]::-webkit-inner-spin-button{opacity:.3}
+
+.sw{position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0}
+.sw input{position:absolute;opacity:0;width:0;height:0}
+.sw .track{
+  position:absolute;inset:0;border-radius:12px;
+  background:var(--glass-2);border:1px solid var(--border);
+  transition:all .3s var(--ease);
+}
+.sw .track::before{
+  content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;
+  border-radius:50%;background:var(--t3);transition:all .3s cubic-bezier(.23,1,.32,1);
+}
+.sw input:checked + .track{background:var(--p);border-color:transparent}
+.sw input:checked + .track::before{transform:translateX(18px);background:#fff}
+
+/* Week bars */
+.week{display:flex;align-items:flex-end;gap:10px;height:150px;padding:20px 0 0}
+.wbar{flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;min-width:0}
+.wtrack{
+  flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center;
+  min-height:0;
+}
+.wcol{
+  width:100%;max-width:26px;background:var(--p);border-radius:5px 5px 2px 2px;
+  min-height:4px;transition:height .6s cubic-bezier(.23,1,.32,1);
+  opacity:.85;
+}
+.wcol.zero{background:var(--glass-2);border:1px solid var(--border);opacity:1}
+.wlbl{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);
+  z-index:100;padding:11px 18px;border-radius:999px;
+  background:var(--glass-2);border:1px solid var(--border-2);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  font-size:13px;color:var(--t1);
+  box-shadow:0 8px 32px rgba(0,0,0,.4);
+  transition:transform .45s cubic-bezier(.23,1,.32,1);
+  pointer-events:none;
+}
+.toast.on{transform:translateX(-50%) translateY(0)}
+
+.kbd{
+  display:inline-block;min-width:20px;padding:2px 6px;
+  border-radius:5px;background:var(--glass-2);border:1px solid var(--border);
+  border-bottom-width:2px;font-family:ui-monospace,monospace;font-size:11px;
+  color:var(--t2);text-align:center;
+}
+.klist{display:flex;flex-direction:column;gap:2px}
+.krow{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--hair);font-size:13px;color:var(--t2)}
+.krow:last-child{border-bottom:none}
+
+.btn-ghost{
+  border:1px solid var(--border);background:var(--glass-2);color:var(--t2);
+  border-radius:10px;padding:9px 16px;font-family:inherit;font-size:12.5px;
+  cursor:pointer;transition:all .2s var(--ease);
+}
+.btn-ghost:hover{color:var(--t1);border-color:var(--border-2)}
+.btn-danger:hover{color:#f85149;border-color:rgba(248,81,73,.4)}
+
+.foot{text-align:center;margin-top:20px;font-size:11px;color:var(--t3);line-height:1.8}
+.foot a{color:var(--t3);text-decoration:none;border-bottom:1px solid var(--hair)}
+.foot a:hover{color:var(--t2)}
+
+@media(max-width:560px){
+  .card{width:calc(100vw - 24px);padding:56px 20px 32px;border-radius:24px;margin:12px}
+  .tw{width:220px;height:220px}
+  .tt{font-size:48px}
+  .panel{padding:56px 20px 32px;border-radius:24px}
+  .stats{gap:20px}
+  /* Six corner buttons need breathing room, or they collide with the title. */
+  .corner{top:10px}
+  .corner.left{left:10px;gap:0}
+  .corner.right{right:10px;gap:0}
+  .icon-btn{width:30px;height:30px}
+  .icon-btn svg{width:15px;height:15px}
+  .hd{margin-bottom:22px}
+  .hd h1{letter-spacing:3px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
 <body>
-<canvas id="bg"></canvas>
-<div id="ml"></div>
-<div id="pp"></div>
-<div class="card" id="mc">
-<button class="sound" id="stog" title="音效"><svg id="son" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg><svg id="soff" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></button>
-<div class="hd"><h1>Focus Flow</h1><p>专注 · 高效 · 成长</p></div>
-<div class="tabs"><button class="tab on" data-m="w"><span class="d"></span>专注</button><button class="tab" data-m="b"><span class="d"></span>短休</button><button class="tab" data-m="l"><span class="d"></span>长休</button></div>
-<div class="tw" id="tw"><svg class="ring" viewBox="0 0 280 280"><circle class="trk" cx="140" cy="140" r="132"/><circle class="gw" id="gw" cx="140" cy="140" r="132"/><circle class="prg" id="prg" cx="140" cy="140" r="132"/></svg><div class="td"><div class="tt" id="tt">25:00</div><div class="tl" id="tl">专注时间</div></div></div>
-<div class="ctrl"><button class="btn bs" id="br" title="重置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button><button class="btn bp" id="bt" title="开始"><svg id="ip" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg><svg id="ipa" style="display:none" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="5" height="18" rx="1"/><rect x="14" y="3" width="5" height="18" rx="1"/></svg></button><button class="btn bs" id="bs" title="跳过"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button></div>
-<div class="ses" id="ses"></div>
-<div class="stats"><div class="st"><div class="sv" id="ss">0</div><div class="sl">完成</div></div><div class="st"><div class="sv" id="sm">0</div><div class="sl">分钟</div></div><div class="st"><div class="sv" id="sk">0</div><div class="sl">连击</div></div></div>
-</div><script>
-(()=>{
+
+<canvas id="bg" aria-hidden="true"></canvas>
+<div id="ml" aria-hidden="true"></div>
+<div id="pp" aria-hidden="true"></div>
+
+<main class="card" id="mc">
+  <div class="corner left">
+    <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题">
+      <svg id="icoMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg id="icoSun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"/></svg>
+    </button>
+    <button class="icon-btn" id="zenBtn" title="沉浸模式 (Z)" aria-label="沉浸模式">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+    </button>
+  </div>
+  <div class="corner right">
+    <button class="icon-btn" id="statsBtn" title="统计 (W)" aria-label="统计">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="1"/><rect x="12" y="8" width="3" height="10" rx="1"/><rect x="17" y="5" width="3" height="13" rx="1"/></svg>
+    </button>
+    <button class="icon-btn" id="helpBtn" title="快捷键 (?)" aria-label="快捷键">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+    </button>
+    <button class="icon-btn" id="soundBtn" title="音效" aria-label="音效开关">
+      <svg id="icoSndOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      <svg id="icoSndOff" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+    </button>
+    <button class="icon-btn" id="setBtn" title="设置" aria-label="设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <header class="hd">
+    <h1>Focus Flow</h1>
+    <p>专注 · 高效 · 成长</p>
+  </header>
+
+  <input class="task" id="task" type="text" maxlength="60" placeholder="这一轮专注做什么？" aria-label="本轮任务">
+
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-m="w" role="tab" aria-selected="true"><span class="d"></span>专注</button>
+    <button class="tab" data-m="b" role="tab" aria-selected="false"><span class="d"></span>短休</button>
+    <button class="tab" data-m="l" role="tab" aria-selected="false"><span class="d"></span>长休</button>
+  </div>
+
+  <div class="tw" id="tw">
+    <svg class="ring" viewBox="0 0 280 280" aria-hidden="true">
+      <circle class="trk" cx="140" cy="140" r="132"/>
+      <circle class="gw" id="gw" cx="140" cy="140" r="132"/>
+      <circle class="prg" id="prg" cx="140" cy="140" r="132"/>
+    </svg>
+    <div class="td">
+      <div class="tt" id="tt" role="timer" aria-live="off">25:00</div>
+      <div class="tl" id="tl">专注时间</div>
+    </div>
+  </div>
+
+  <div class="ctrl">
+    <button class="btn bs" id="br" title="重置 (R)" aria-label="重置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+    </button>
+    <button class="btn bp" id="bt" title="开始/暂停 (空格)" aria-label="开始或暂停">
+      <svg id="ip" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
+      <svg id="ipa" style="display:none" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="5" height="18" rx="1"/><rect x="14" y="3" width="5" height="18" rx="1"/></svg>
+    </button>
+    <button class="btn bs" id="bs" title="跳过 (S)" aria-label="跳过">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+    </button>
+  </div>
+
+  <div class="ses" id="ses"></div>
+
+  <div class="stats">
+    <div class="st"><div class="sv" id="ss">0</div><div class="sl">今日完成</div></div>
+    <div class="st"><div class="sv" id="sm">0</div><div class="sl">专注分钟</div></div>
+    <div class="st"><div class="sv" id="sk">0</div><div class="sl">当前轮次</div></div>
+  </div>
+
+  <p class="foot">
+    <span class="kbd">空格</span> 开始/暂停 · <span class="kbd">R</span> 重置 · <span class="kbd">S</span> 跳过 · <span class="kbd">?</span> 快捷键
+  </p>
+
+  <!-- Settings panel -->
+  <section class="panel" id="panelSet" role="dialog" aria-label="设置">
+    <div class="panel-hd">
+      <h2>设置</h2>
+      <button class="icon-btn" data-close="panelSet" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="panel-body">
+      <div class="row">
+        <div class="row-l"><label for="cfgW">专注时长</label><span class="row-hint">1–120 分钟</span></div>
+        <input type="number" id="cfgW" min="1" max="120" value="25">
+      </div>
+      <div class="row">
+        <div class="row-l"><label for="cfgB">短休息</label><span class="row-hint">1–60 分钟</span></div>
+        <input type="number" id="cfgB" min="1" max="60" value="5">
+      </div>
+      <div class="row">
+        <div class="row-l"><label for="cfgL">长休息</label><span class="row-hint">1–90 分钟</span></div>
+        <input type="number" id="cfgL" min="1" max="90" value="15">
+      </div>
+      <div class="row">
+        <div class="row-l"><label for="cfgR">几轮后长休</label><span class="row-hint">1–12 轮</span></div>
+        <input type="number" id="cfgR" min="1" max="12" value="4">
+      </div>
+      <div class="row">
+        <div class="row-l"><label>自动开始下一轮</label><span class="row-hint">结束后自动切换并计时</span></div>
+        <label class="sw"><input type="checkbox" id="cfgAuto" checked><span class="track"></span></label>
+      </div>
+      <div class="row">
+        <div class="row-l"><label>桌面通知</label><span class="row-hint">切到其他窗口也能收到提醒</span></div>
+        <label class="sw"><input type="checkbox" id="cfgNotify" checked><span class="track"></span></label>
+      </div>
+      <div class="row">
+        <div class="row-l"><label>提示音</label><span class="row-hint">阶段切换与完成提示</span></div>
+        <label class="sw"><input type="checkbox" id="cfgSnd" checked><span class="track"></span></label>
+      </div>
+      <div class="row">
+        <div class="row-l"><label>输入时秒针不跳动</label><span class="row-hint">专注时隐藏秒数，降低干扰</span></div>
+        <label class="sw"><input type="checkbox" id="cfgHideSec"><span class="track"></span></label>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats panel -->
+  <section class="panel" id="panelStats" role="dialog" aria-label="统计">
+    <div class="panel-hd">
+      <h2>本周专注</h2>
+      <button class="icon-btn" data-close="panelStats" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="panel-body">
+      <div class="week" id="week"></div>
+      <div class="row" style="margin-top:20px">
+        <div class="row-l"><label>本周总计</label><span class="row-hint">7 天累计专注分钟</span></div>
+        <span class="sv" id="weekTotal">0</span>
+      </div>
+      <div class="row">
+        <div class="row-l"><label>累计专注</label><span class="row-hint">自首次使用</span></div>
+        <span class="sv" id="allTotal">0</span>
+      </div>
+      <div class="row" style="border-bottom:none;padding-top:18px">
+        <button class="btn-ghost btn-danger" id="resetData">清空所有记录</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Help panel -->
+  <section class="panel" id="panelHelp" role="dialog" aria-label="快捷键">
+    <div class="panel-hd">
+      <h2>快捷键</h2>
+      <button class="icon-btn" data-close="panelHelp" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="panel-body">
+      <div class="klist">
+        <div class="krow"><span>开始 / 暂停</span><span class="kbd">Space</span></div>
+        <div class="krow"><span>重置当前阶段</span><span class="kbd">R</span></div>
+        <div class="krow"><span>跳过当前阶段</span><span class="kbd">S</span></div>
+        <div class="krow"><span>切换专注 / 短休 / 长休</span><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span></div>
+        <div class="krow"><span>沉浸模式（隐藏界面）</span><span class="kbd">Z</span></div>
+        <div class="krow"><span>切换主题</span><span class="kbd">T</span></div>
+        <div class="krow"><span>统计</span><span class="kbd">W</span></div>
+        <div class="krow"><span>设置</span><span class="kbd">,</span></div>
+        <div class="krow"><span>关闭面板</span><span class="kbd">Esc</span></div>
+      </div>
+      <p class="foot" style="margin-top:18px">
+        计时基于时间戳而非计数器，切到后台也不会走慢。
+      </p>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
 "use strict";
-const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
-const themes={w:{p:'#ff6b6b',g:'rgba(255,107,107,.3)'},b:{p:'#4ecdc4',g:'rgba(78,205,196,.3)'},l:{p:'#a29bfe',g:'rgba(162,155,254,.3)'}};
-let cfg={w:25,b:5,l:15,r:4,snd:true};
-let st={m:'w',run:false,tot:cfg.w*60,rem:cfg.w*60,cs:0,tm:0,str:0,iv:null};
-try{const s=JSON.parse(localStorage.getItem('pf'));if(s){st.cs=s.s||0;st.tm=s.m||0}}catch(e){}
-const AC=window.AudioContext||window.webkitAudioContext;let ac;
-function ea(){if(!ac)ac=new AC()}
-function pt(f,d,t='sine'){if(!cfg.snd)return;ea();const o=ac.createOscillator(),g=ac.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(.15,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}
-function pc(){pt(523,.15);setTimeout(()=>pt(659,.15),150);setTimeout(()=>pt(784,.3),300)}
-function ck(){pt(800,.05,'square')}
-function at(m){const t=themes[m];document.documentElement.style.setProperty('--p',t.p);document.documentElement.style.setProperty('--g',t.g)}
-function ms(m){return m==='w'?cfg.w*60:m==='b'?cfg.b*60:cfg.l*60}
-function ml(m){return m==='w'?'专注时间':m==='b'?'短休息':'长休息'}
-function setMode(m,auto=false){if(st.run)stop();st.m=m;st.tot=ms(m);st.rem=st.tot;at(m);upd();utab();uses();if(!auto)ck();document.title=ft(st.rem)+' - Focus Flow'}
-function ft(s){const m=Math.floor(s/60),sc=s%60;return String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0')}
-function upd(){$('#tt').textContent=ft(st.rem);$('#tl').textContent=ml(st.m);const c=2*Math.PI*132,pg=1-(st.rem/st.tot),of2=c*(1-pg);$('#prg').style.strokeDashoffset=of2;$('#gw').style.strokeDashoffset=of2;$('#ss').textContent=st.cs;$('#sm').textContent=st.tm;$('#sk').textContent=st.str}
-function utab(){$$('.tab').forEach(t=>t.classList.toggle('on',t.dataset.m===st.m))}
-function uses(){const el=$('#ses');el.innerHTML='';for(let i=0;i<cfg.r;i++){const d=document.createElement('div');d.className='sd';if(i<(st.cs%cfg.r))d.classList.add('f');if(i===(st.cs%cfg.r)&&st.m==='w')d.classList.add('c');el.appendChild(d)}const ct=document.createElement('span');ct.className='sc';ct.textContent='第 '+(Math.floor(st.cs/cfg.r)+1)+' 轮';el.appendChild(ct)}
-function tick(){if(st.rem<=0){comp();return}st.rem--;upd();document.title=ft(st.rem)+' - Focus Flow'}
-function start(){if(st.run)return;st.run=true;st.iv=setInterval(tick,1000);$('#ip').style.display='none';$('#ipa').style.display='block';$('#tw').classList.add('run');ck()}
-function stop(){st.run=false;clearInterval(st.iv);st.iv=null;$('#ip').style.display='block';$('#ipa').style.display='none';$('#tw').classList.remove('run')}
-function reset(){stop();st.rem=st.tot;upd();document.title=ft(st.rem)+' - Focus Flow';ck()}
-function comp(){stop();pc();if(st.m==='w'){st.cs++;st.tm+=cfg.w;st.str++;save();uses();upd();if(st.cs%cfg.r===0)setMode('l',true);else setMode('b',true)}else{setMode('w',true)}setTimeout(start,500)}
-function save(){localStorage.setItem('pf',JSON.stringify({s:st.cs,m:st.tm}))}
-$('#bt').addEventListener('click',()=>{st.run?stop():start()});
-$('#br').addEventListener('click',reset);
-$('#bs').addEventListener('click',()=>{if(st.m==='w'){st.cs++;st.tm+=Math.round((st.tot-st.rem)/60);save();if(st.cs%cfg.r===0)setMode('l');else setMode('b')}else{setMode('w')}});
-$$('.tab').forEach(t=>t.addEventListener('click',()=>setMode(t.dataset.m)));
-$('#stog').addEventListener('click',()=>{cfg.snd=!cfg.snd;$('#son').style.display=cfg.snd?'block':'none';$('#soff').style.display=cfg.snd?'none':'block'});
-document.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();st.run?stop():start()}if(e.code==='KeyR')reset();if(e.code==='KeyS')$('#bs').click()});
-const ml2=$('#ml');
-document.addEventListener('mousemove',e=>{ml2.style.left=e.clientX+'px';ml2.style.top=e.clientY+'px';$$('.btn').forEach(b=>{const r=b.getBoundingClientRect();b.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%');b.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%')})});
-const cv=$('#bg'),cx=cv.getContext('2d');let W,H;
-function rc(){W=cv.width=innerWidth;H=cv.height=innerHeight}
-rc();addEventListener('resize',rc);
-const bl=Array.from({length:5},()=>({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:200+Math.random()*200,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3}));
-function draw(){cx.clearRect(0,0,W,H);bl.forEach(b=>{b.x+=b.vx;b.y+=b.vy;if(b.x<-b.r)b.x=W+b.r;if(b.x>W+b.r)b.x=-b.r;if(b.y<-b.r)b.y=H+b.r;if(b.y>H+b.r)b.y=-b.r;const g=cx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);g.addColorStop(0,themes[st.m].p+'12');g.addColorStop(1,'transparent');cx.fillStyle=g;cx.fillRect(b.x-b.r,b.y-b.r,b.r*2,b.r*2)});requestAnimationFrame(draw)}
-requestAnimationFrame(draw);
-function sp(){if(!st.run)return;const p=document.createElement('div');p.className='pt';p.style.left=Math.random()*100+'vw';p.style.bottom='-10px';p.style.animationDuration=(3+Math.random()*3)+'s';const c={w:'#ff6b6b',b:'#4ecdc4',l:'#a29bfe'};p.style.background=c[st.m];p.style.boxShadow='0 0 6px '+c[st.m];$('#pp').appendChild(p);setTimeout(()=>p.remove(),6000)}
-setInterval(sp,800);
-upd();uses();utab();at('w');
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* Namespace the storage key. A bare "pf" would collide with any other app
+   served from the same origin (GitHub Pages puts every repo under
+   username.github.io, sharing one localStorage). */
+const KEY = "focusflow:v2";
+
+const THEMES = {
+  w: { p: "#ff6b6b", g: "rgba(255,107,107,.32)" },
+  b: { p: "#4ecdc4", g: "rgba(78,205,196,.32)" },
+  l: { p: "#a29bfe", g: "rgba(162,155,254,.32)" }
+};
+
+const DEFAULTS = {
+  w: 25, b: 5, l: 15, r: 4,
+  snd: true, auto: true, notify: true, hideSec: false,
+  theme: "dark"
+};
+
+const LIMITS = { w: [1, 120], b: [1, 60], l: [1, 90], r: [1, 12] };
+
+let cfg = { ...DEFAULTS };
+
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const st = {
+  m: "w",          // current mode
+  running: false,
+  endAt: 0,        // epoch ms when the current phase ends
+  dur: 0,          // full length of the current phase, in seconds
+  done: 0,         // completed focus sessions today
+  mins: 0,         // focus minutes today
+  task: "",
+  hist: {}         // { 'YYYY-MM-DD': focusMinutes }
+};
+
+/* ---------------- persistence ---------------- */
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.cfg) {
+      cfg = { ...DEFAULTS, ...s.cfg };
+      for (const k of Object.keys(LIMITS)) {
+        const [lo, hi] = LIMITS[k];
+        const n = Number(cfg[k]);
+        cfg[k] = Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : DEFAULTS[k];
+      }
+      cfg.snd = !!cfg.snd;
+      cfg.auto = !!cfg.auto;
+      cfg.notify = !!cfg.notify;
+      cfg.hideSec = !!cfg.hideSec;
+      if (s.cfg.theme === "light" || s.cfg.theme === "dark") cfg.theme = s.cfg.theme;
+    }
+    if (s.st) {
+      st.done = Number(s.st.done) || 0;
+      st.mins = Number(s.st.mins) || 0;
+      st.task = typeof s.st.task === "string" ? s.st.task.slice(0, 60) : "";
+      st.hist = s.st.hist && typeof s.st.hist === "object" ? s.st.hist : {};
+    }
+  } catch (e) {
+    /* corrupted storage must never break the timer */
+  }
+}
+
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ cfg, st: {
+        done: st.done, mins: st.mins, task: st.task, hist: st.hist
+      }}));
+    } catch (e) { /* quota or private mode */ }
+  }, 250);
+}
+function saveNow() {
+  clearTimeout(saveTimer);
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ cfg, st: {
+      done: st.done, mins: st.mins, task: st.task, hist: st.hist
+    }}));
+  } catch (e) {}
+}
+
+/* ---------------- audio ---------------- */
+
+const AC = window.AudioContext || window.webkitAudioContext;
+let ac = null;
+function audio() {
+  if (!ac && AC) { try { ac = new AC(); } catch (e) { return null; } }
+  // Browsers suspend the context until a user gesture; resume on every call.
+  if (ac && ac.state === "suspended") ac.resume().catch(() => {});
+  return ac;
+}
+function tone(freq, dur, type = "sine", vol = 0.15) {
+  if (!cfg.snd) return;
+  const a = audio();
+  if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+  o.connect(g); g.connect(a.destination);
+  o.start(); o.stop(a.currentTime + dur);
+}
+function sfxComplete() { tone(523, .15); setTimeout(() => tone(659, .15), 150); setTimeout(() => tone(784, .3), 300); }
+function sfxTick() { tone(800, .05, "square", 0.08); }
+function sfxBreak() { tone(440, .2, "sine", 0.1); setTimeout(() => tone(330, .25, "sine", 0.1), 180); }
+
+/* ---------------- notifications ---------------- */
+
+let notifyGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
+async function askNotify() {
+  if (typeof Notification === "undefined") return false;
+  if (Notification.permission === "granted") { notifyGranted = true; return true; }
+  if (Notification.permission === "denied") return false;
+  try {
+    const p = await Notification.requestPermission();
+    notifyGranted = p === "granted";
+  } catch (e) {}
+  return notifyGranted;
+}
+function notify(title, body) {
+  if (!cfg.notify || !notifyGranted) return;
+  try {
+    const n = new Notification(title, { body, silent: true, tag: "focusflow" });
+    n.onclick = () => { window.focus(); n.close(); };
+    setTimeout(() => n.close(), 8000);
+  } catch (e) {}
+}
+
+/* ---------------- toast ---------------- */
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("on"), 2400);
+}
+
+/* ---------------- timer core ---------------- */
+
+const modeSec = m => (m === "w" ? cfg.w : m === "b" ? cfg.b : cfg.l) * 60;
+const modeName = m => (m === "w" ? "专注时间" : m === "b" ? "短休息" : "长休息");
+const modeKey = m => (m === "w" ? "w" : m === "b" ? "b" : "l");
+
+/** Remaining seconds, derived from the clock — never from a counter. */
+function remain() {
+  if (!st.running) return st.dur;
+  return Math.max(0, Math.round((st.endAt - Date.now()) / 1000));
+}
+
+function applyTheme(m) {
+  const t = THEMES[modeKey(m)];
+  document.documentElement.style.setProperty("--p", t.p);
+  document.documentElement.style.setProperty("--g", t.g);
+}
+
+function fmt(s) {
+  const m = Math.floor(s / 60), sc = s % 60;
+  return String(m).padStart(2, "0") + ":" + String(sc).padStart(2, "0");
+}
+
+const CIRC = 2 * Math.PI * 132;
+
+function render() {
+  const left = remain();
+  const tt = $("#tt");
+  if (cfg.hideSec && st.m === "w") {
+    // Minutes only; freeze the seconds so the display stops flickering.
+    const mins = Math.ceil(left / 60);
+    tt.textContent = String(mins).padStart(2, "0") + ":00";
+  } else {
+    tt.textContent = fmt(left);
+  }
+  $("#tl").textContent = modeName(st.m);
+
+  const prog = st.dur ? 1 - left / st.dur : 0;
+  const off = CIRC * (1 - prog);
+  $("#prg").style.strokeDashoffset = off;
+  $("#gw").style.strokeDashoffset = off;
+
+  $("#ss").textContent = st.done;
+  $("#sm").textContent = st.mins;
+  $("#sk").textContent = (st.done % cfg.r) + 1;
+
+  document.title = (st.running ? fmt(left) + " · " : "") + (st.task ? st.task + " · " : "") + "Focus Flow";
+}
+
+function renderDots() {
+  const el = $("#ses");
+  el.innerHTML = "";
+  const inRound = st.done % cfg.r;
+  for (let i = 0; i < cfg.r; i++) {
+    const d = document.createElement("div");
+    d.className = "sd";
+    if (i < inRound) d.classList.add("f");
+    if (i === inRound && st.m === "w") d.classList.add("c");
+    el.appendChild(d);
+  }
+  const label = document.createElement("span");
+  label.className = "sc";
+  label.textContent = "第 " + (Math.floor(st.done / cfg.r) + 1) + " 轮";
+  el.appendChild(label);
+}
+
+function renderTabs() {
+  $$(".tab").forEach(t => {
+    const on = t.dataset.m === st.m;
+    t.classList.toggle("on", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
+let iv = null;
+function loop() {
+  if (remain() <= 0) { finish(); return; }
+  render();
+  iv = setTimeout(loop, 250);
+}
+
+function start() {
+  if (st.running) return;
+  // Anchor to an absolute end time. A throttled or delayed interval then
+  // cannot make the countdown drift.
+  st.dur = st.dur || modeSec(st.m);
+  st.endAt = Date.now() + remain() * 1000;
+  st.running = true;
+  $("#ip").style.display = "none";
+  $("#ipa").style.display = "block";
+  $("#tw").classList.add("run");
+  sfxTick();
+  loop();
+}
+
+function pause() {
+  if (!st.running) return;
+  const left = remain();
+  clearTimeout(iv); iv = null;
+  st.dur = left;
+  st.running = false;
+  st.endAt = 0;
+  $("#ip").style.display = "block";
+  $("#ipa").style.display = "none";
+  $("#tw").classList.remove("run");
+  render();
+}
+
+function toggle() { st.running ? pause() : start(); }
+
+function reset() {
+  pause();
+  st.dur = modeSec(st.m);
+  render();
+  sfxTick();
+}
+
+function setMode(m, auto = false) {
+  if (st.running) pause();
+  st.m = modeKey(m);
+  st.dur = modeSec(st.m);
+  applyTheme(st.m);
+  render(); renderTabs(); renderDots();
+  if (!auto) sfxTick();
+}
+
+function bumpHist(mins) {
+  const k = todayKey();
+  st.hist[k] = (st.hist[k] || 0) + mins;
+  // Keep a year; anything older is not actionable.
+  const keys = Object.keys(st.hist).sort();
+  while (keys.length > 366) delete st.hist[keys.shift()];
+}
+
+function finish() {
+  const finished = st.m;
+  clearTimeout(iv); iv = null;
+  st.running = false;
+  $("#ip").style.display = "block";
+  $("#ipa").style.display = "none";
+  $("#tw").classList.remove("run");
+
+  if (finished === "w") {
+    st.done++;
+    st.mins += cfg.w;
+    bumpHist(cfg.w);
+    sfxComplete();
+    const next = st.done % cfg.r === 0 ? "l" : "b";
+    notify("专注完成 🎉", `${cfg.w} 分钟已计入 · 接下来是${modeName(next)}`);
+    toast(`完成 ${cfg.w} 分钟专注`);
+    save();
+    setMode(next, true);
+    if (cfg.auto) setTimeout(start, 600);
+  } else {
+    sfxBreak();
+    notify("休息结束", "回到专注吧");
+    toast("休息结束，回到专注");
+    setMode("w", true);
+    if (cfg.auto) setTimeout(start, 600);
+  }
+}
+
+/* Skip does NOT count as a completed session — the old version incremented
+   the counter on skip, so skipping 10 times looked like 10 finished pomodoros. */
+function skip() {
+  const wasWork = st.m === "w";
+  pause();
+  if (wasWork) {
+    const next = st.done % cfg.r === 0 ? "l" : "b";
+    setMode(next);
+    toast("已跳过，未计入统计");
+  } else {
+    setMode("w");
+    toast("已跳过休息");
+  }
+  sfxTick();
+}
+
+/* ---------------- panels ---------------- */
+
+let openPanel = null;
+function showPanel(id) {
+  if (openPanel === id) return hidePanel();
+  if (openPanel) $("#" + openPanel).classList.remove("on");
+  openPanel = id;
+  $("#" + id).classList.add("on");
+}
+function hidePanel() {
+  if (openPanel) $("#" + openPanel).classList.remove("on");
+  openPanel = null;
+}
+
+function syncSettingsUI() {
+  $("#cfgW").value = cfg.w;
+  $("#cfgB").value = cfg.b;
+  $("#cfgL").value = cfg.l;
+  $("#cfgR").value = cfg.r;
+  $("#cfgAuto").checked = cfg.auto;
+  $("#cfgNotify").checked = cfg.notify;
+  $("#cfgSnd").checked = cfg.snd;
+  $("#cfgHideSec").checked = cfg.hideSec;
+  $("#icoSndOn").style.display = cfg.snd ? "block" : "none";
+  $("#icoSndOff").style.display = cfg.snd ? "none" : "block";
+  document.documentElement.setAttribute("data-theme", cfg.theme);
+  $("#icoMoon").style.display = cfg.theme === "dark" ? "block" : "none";
+  $("#icoSun").style.display = cfg.theme === "dark" ? "none" : "block";
+  document.querySelector('meta[name=theme-color]')
+    .setAttribute("content", cfg.theme === "dark" ? "#0a0a0f" : "#f4f5f7");
+}
+
+function renderWeek() {
+  const el = $("#week");
+  el.innerHTML = "";
+  const names = ["日", "一", "二", "三", "四", "五", "六"];
+  const now = new Date();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    days.push({ label: names[d.getDay()], mins: st.hist[key] || 0, isToday: i === 0 });
+  }
+  const max = Math.max(60, ...days.map(d => d.mins));
+  let weekTotal = 0, allTotal = 0;
+
+  for (const d of days) {
+    const bar = document.createElement("div");
+    bar.className = "wbar";
+    const track = document.createElement("div");
+    track.className = "wtrack";
+    const col = document.createElement("div");
+    col.className = "wcol" + (d.mins ? "" : " zero");
+    col.style.height = d.mins ? Math.max(8, (d.mins / max) * 100) + "%" : "8px";
+    if (d.isToday) col.style.boxShadow = "0 0 12px var(--g)";
+    col.title = `${d.label} · ${d.mins} 分钟`;
+    track.appendChild(col);
+    const lbl = document.createElement("div");
+    lbl.className = "wlbl";
+    lbl.textContent = d.label;
+    if (d.isToday) lbl.style.color = "var(--p)";
+    bar.appendChild(track);
+    bar.appendChild(lbl);
+    el.appendChild(bar);
+    weekTotal += d.mins;
+  }
+  for (const v of Object.values(st.hist)) allTotal += Number(v) || 0;
+  $("#weekTotal").textContent = weekTotal;
+  $("#allTotal").textContent = allTotal;
+}
+
+/* ---------------- background ---------------- */
+
+/* Blob gradients are pre-rendered once per colour and blitted each frame.
+   Rebuilding five radial gradients at 60fps was the main cost here. */
+const cv = $("#bg"), cx = cv.getContext("2d");
+let W = 0, H = 0, dpr = 1;
+const blobs = Array.from({ length: 5 }, () => ({
+  x: 0, y: 0, r: 200 + Math.random() * 200,
+  vx: (Math.random() - .5) * .3, vy: (Math.random() - .5) * .3
+}));
+const cache = {};
+
+function blobSprite(color) {
+  if (cache[color]) return cache[color];
+  const size = 512;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g2 = c.getContext("2d");
+  const g = g2.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, color + "22");
+  g.addColorStop(1, "transparent");
+  g2.fillStyle = g;
+  g2.fillRect(0, 0, size, size);
+  cache[color] = c;
+  return c;
+}
+
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  blobs.forEach(b => { if (!b.x) { b.x = Math.random() * W; b.y = Math.random() * H; } });
+}
+resize();
+addEventListener("resize", resize);
+
+let curColor = THEMES.w.p;
+function draw() {
+  cx.clearRect(0, 0, W, H);
+  const sprite = blobSprite(curColor);
+  for (const b of blobs) {
+    b.x += b.vx; b.y += b.vy;
+    if (b.x < -b.r) b.x = W + b.r;
+    if (b.x > W + b.r) b.x = -b.r;
+    if (b.y < -b.r) b.y = H + b.r;
+    if (b.y > H + b.r) b.y = -b.r;
+    cx.drawImage(sprite, b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+  }
+  requestAnimationFrame(draw);
+}
+draw();
+
+/* Pointer glow — rAF-throttled so a 1000Hz mouse cannot flood the main
+   thread with layout reads. */
+const ml = $("#ml"), btns = $$(".btn");
+let pending = null;
+addEventListener("mousemove", e => {
+  if (pending) return;
+  pending = { x: e.clientX, y: e.clientY };
+  requestAnimationFrame(() => {
+    const p = pending;
+    pending = null;
+    ml.style.left = p.x + "px";
+    ml.style.top = p.y + "px";
+    for (const b of btns) {
+      const r = b.getBoundingClientRect();
+      b.style.setProperty("--mx", ((p.x - r.left) / r.width * 100) + "%");
+      b.style.setProperty("--my", ((p.y - r.top) / r.height * 100) + "%");
+    }
+  });
+}, { passive: true });
+
+/* Rising particles */
+setInterval(() => {
+  if (!st.running || document.hidden) return;
+  const p = document.createElement("div");
+  p.className = "pt";
+  p.style.left = Math.random() * 100 + "vw";
+  p.style.bottom = "-10px";
+  p.style.animationDuration = (3 + Math.random() * 3) + "s";
+  const c = THEMES[modeKey(st.m)].p;
+  p.style.background = c;
+  p.style.boxShadow = "0 0 6px " + c;
+  $("#pp").appendChild(p);
+  setTimeout(() => p.remove(), 6000);
+}, 800);
+
+/* Roll the daily counters over at midnight. */
+setInterval(() => {
+  const k = todayKey();
+  if (st._day && st._day !== k) { st.done = 0; st.mins = 0; st._day = k; save(); render(); renderWeek(); }
+  st._day = k;
+}, 30000);
+
+/* Persist immediately when the tab is hidden or closed — a debounced write
+   can be lost if the process dies. */
+addEventListener("visibilitychange", () => { if (document.hidden) saveNow(); });
+addEventListener("pagehide", saveNow);
+addEventListener("beforeunload", saveNow);
+
+/* ---------------- wiring ---------------- */
+
+$("#bt").addEventListener("click", toggle);
+$("#br").addEventListener("click", reset);
+$("#bs").addEventListener("click", skip);
+$$(".tab").forEach(t => t.addEventListener("click", () => setMode(t.dataset.m)));
+
+$("#task").addEventListener("input", e => { st.task = e.target.value; save(); render(); });
+$("#task").addEventListener("keydown", e => { if (e.key === "Enter") e.target.blur(); });
+
+$("#soundBtn").addEventListener("click", () => {
+  cfg.snd = !cfg.snd;
+  syncSettingsUI(); save();
+  if (cfg.snd) sfxTick();
+  toast(cfg.snd ? "音效已开" : "音效已关");
+});
+
+$("#themeBtn").addEventListener("click", () => {
+  cfg.theme = cfg.theme === "dark" ? "light" : "dark";
+  syncSettingsUI(); save();
+});
+
+$("#zenBtn").addEventListener("click", () => {
+  document.body.classList.toggle("zen");
+  toast(document.body.classList.contains("zen") ? "沉浸模式 · 按 Z 退出" : "已退出沉浸模式");
+});
+
+$("#setBtn").addEventListener("click", () => { syncSettingsUI(); showPanel("panelSet"); });
+$("#statsBtn").addEventListener("click", () => { renderWeek(); showPanel("panelStats"); });
+$("#helpBtn").addEventListener("click", () => showPanel("panelHelp"));
+
+$$("[data-close]").forEach(b => b.addEventListener("click", hidePanel));
+
+$("#resetData").addEventListener("click", () => {
+  if (!confirm("确定清空所有统计数据？此操作不可撤销。")) return;
+  st.done = 0; st.mins = 0; st.hist = {};
+  save(); render(); renderWeek();
+  toast("记录已清空");
+});
+
+/* settings inputs */
+for (const k of ["w", "b", "l", "r"]) {
+  $("#cfg" + k.toUpperCase()).addEventListener("change", e => {
+    const [lo, hi] = LIMITS[k];
+    let n = Math.round(Number(e.target.value));
+    if (!Number.isFinite(n)) n = DEFAULTS[k];
+    n = Math.min(hi, Math.max(lo, n));
+    e.target.value = n;
+    cfg[k] = n;
+    // Re-scale the current phase unless it is mid-run.
+    if (st.m === k && !st.running) st.dur = modeSec(st.m);
+    save(); render(); renderDots();
+    toast("已更新为 " + n + " 分钟");
+  });
+}
+$("#cfgAuto").addEventListener("change", e => { cfg.auto = e.target.checked; save(); });
+$("#cfgSnd").addEventListener("change", e => { cfg.snd = e.target.checked; syncSettingsUI(); save(); });
+$("#cfgHideSec").addEventListener("change", e => { cfg.hideSec = e.target.checked; save(); render(); });
+$("#cfgNotify").addEventListener("change", async e => {
+  cfg.notify = e.target.checked;
+  if (cfg.notify) {
+    const ok = await askNotify();
+    if (!ok) { cfg.notify = false; e.target.checked = false; toast("浏览器未授予通知权限"); }
+  }
+  save();
+});
+
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const el = e.target;
+  const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+
+  if (e.key === "Escape") { hidePanel(); if (typing) el.blur(); return; }
+  if (typing) return;
+
+  switch (e.code) {
+    case "Space": e.preventDefault(); toggle(); break;
+    case "KeyR": reset(); break;
+    case "KeyS": skip(); break;
+    case "Digit1": setMode("w"); break;
+    case "Digit2": setMode("b"); break;
+    case "Digit3": setMode("l"); break;
+    case "KeyZ":
+      document.body.classList.toggle("zen");
+      break;
+    case "KeyT":
+      cfg.theme = cfg.theme === "dark" ? "light" : "dark";
+      syncSettingsUI(); save();
+      break;
+    case "KeyW": renderWeek(); showPanel("panelStats"); break;
+    case "Comma": syncSettingsUI(); showPanel("panelSet"); break;
+    case "Slash":
+      if (e.shiftKey) { e.preventDefault(); showPanel("panelHelp"); }
+      break;
+    default: break;
+  }
+});
+
+/* ---------------- boot ---------------- */
+
+load();
+st._day = todayKey();
+
+// A new day starts with fresh counters.
+if (!st.hist[todayKey()]) st.hist[todayKey()] = 0;
+
+st.dur = modeSec(st.m);
+$("#task").value = st.task;
+applyTheme(st.m);
+syncSettingsUI();
+render(); renderTabs(); renderDots();
+
+// Notifications need a user gesture, so ask on the first interaction.
+const askOnce = () => {
+  if (cfg.notify && !notifyGranted) askNotify();
+  removeEventListener("pointerdown", askOnce);
+  removeEventListener("keydown", askOnce);
+};
+addEventListener("pointerdown", askOnce);
+addEventListener("keydown", askOnce);
+
 })();
 </script>
 </body>
